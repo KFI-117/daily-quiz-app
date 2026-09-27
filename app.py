@@ -27,7 +27,7 @@ def save_data(data):
 
 
 # Main UI Title
-st.title("🎯 Daily 5 Quiz Battle")
+st.title("🎯 Daily 5 Quiz Battle (Osama vs Kaifi)")
 st.write(
     "Aapas me padhai karo, roz 5 sawaal pucho, aur prep mazboot karo! (5th"
     " Option: Question not attempted)"
@@ -36,7 +36,7 @@ st.write(
 # Sidebar for User Selection
 st.sidebar.header("👤 User Profile")
 current_user = st.sidebar.selectbox(
-    "Kaun login kar raha hai?", ["Select Name", "Student A", "Student B"]
+    "Kaun login kar raha hai?", ["Select Name", "Osama", "Kaifi"]
 )
 
 if current_user == "Select Name":
@@ -44,7 +44,7 @@ if current_user == "Select Name":
   st.stop()
 
 # Determine the opponent
-opponent = "Student B" if current_user == "Student A" else "Student A"
+opponent = "Kaifi" if current_user == "Osama" else "Osama"
 
 # Load database
 db = load_data()
@@ -148,7 +148,7 @@ with tab2:
                 "Pehle koi option select karo ya 'Question not attempted' chuno!"
             )
           else:
-            selected_key = f"Option ({selected_choice[1]})"
+            selected_key = f"Option ({selected_choice[1])"
             correct_key = q["answer"]
 
             if selected_key == "Option (e)":
@@ -199,7 +199,6 @@ with tab3:
           st.write(f" - Explanation: {q['explanation']}")
 
       with col2:
-        # Delete button for each question
         if st.button("🗑️ Delete", key=f"del_btn_{i}"):
           db["questions"].pop(i)
           save_data(db)
