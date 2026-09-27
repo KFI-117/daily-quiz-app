@@ -148,7 +148,7 @@ with tab2:
                 "Pehle koi option select karo ya 'Question not attempted' chuno!"
             )
           else:
-            selected_key = f"Option ({selected_choice[1])"
+            selected_key = f"Option ({selected_choice[1]})"
             correct_key = q["answer"]
 
             if selected_key == "Option (e)":
