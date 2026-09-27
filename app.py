@@ -9,7 +9,6 @@ st.set_page_config(
 )
 
 # --- SUPABASE CONFIGURATION ---
-# Apni real URL aur anon public key yahan daalein
 SUPABASE_URL = "https://dqcyhbbhtyweafwubcgs.supabase.co"  #[cite: 3, 4]
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxY3loYmJodHl3ZWFmd3ViY2dzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0OTYyMzgsImV4cCI6MjEwNjA3MjIzOH0.hq2Tw-0J4CB2Xe9fAmF5I-_i-jZefu9yVf1J-QH8nSA"  #[cite: 4]
 
