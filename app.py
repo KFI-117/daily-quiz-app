@@ -107,24 +107,28 @@ with tab1:
 with tab2:
   st.header(f"Quiz Session ({current_user}'s Turn)")
 
-  # Filter questions meant for the current user and reverse order (Recent First)
-  pending_questions = [
-      q for q in db["questions"] if q.get("target") == current_user
-  ][::-1]
+  # Get pending questions along with their original absolute index in the database
+  pending_with_indices = [
+      (i, q)
+      for i, q in enumerate(db["questions"])
+      if q.get("target") == current_user
+  ]
 
-  if not pending_questions:
+  if not pending_with_indices:
     st.info(f"No pending questions assigned by {opponent} at the moment.")
   else:
-    st.write(f"Total Available Questions: {len(pending_questions)}")
+    st.write(f"Total Available Questions: {len(pending_with_indices)}")
     st.write(
-        "Note: Submit each question individually to view instant feedback and"
-        " explanation. (Most recent questions appear first)"
+        "Note: Most recent questions appear first, but original question"
+        " numbers remain fixed."
     )
 
-    for idx, q in enumerate(pending_questions):
-      st.markdown(f"### Q{idx + 1}: {q['question']}")
+    # Reverse for display (Recent first)
+    for original_idx, q in pending_with_indices[::-1]:
+      q_num = original_idx + 1  # Fixed absolute numbering
+      st.markdown(f"### Q{q_num}: {q['question']}")
 
-      with st.form(key=f"q_form_{idx}"):
+      with st.form(key=f"q_form_{original_idx}"):
         opts_list = [
             f"(a) {q['options']['Option (a)']}",
             f"(b) {q['options']['Option (b)']}",
@@ -134,10 +138,10 @@ with tab2:
         ]
 
         selected_choice = st.radio(
-            f"Select your response for Q{idx + 1}",
+            f"Select your response for Q{q_num}",
             opts_list,
             index=None,
-            key=f"ans_radio_{idx}",
+            key=f"ans_radio_{original_idx}",
         )
 
         ans_submitted = st.form_submit_button("Check Answer")
@@ -174,23 +178,24 @@ with tab2:
 with tab3:
   st.header("📊 Database History & Management")
   st.write(
-      "Review all previously added questions (Most recent first). You can"
-      " delete any invalid or incorrect entries below:"
+      "Review all previously added questions with their permanent numbers"
+      " (Most recent first):"
   )
 
   if not db["questions"]:
     st.write("Database is currently empty.")
   else:
-    # Reverse order for management view as well so latest is on top
-    reversed_questions = list(enumerate(db["questions"]))[::-1]
+    # Reverse order for management view, keeping original numbering
+    reversed_management = list(enumerate(db["questions"]))[::-1]
 
-    for original_index, q in reversed_questions:
+    for original_idx, q in reversed_management:
+      q_num = original_idx + 1
       col1, col2 = st.columns([4, 1])
 
       with col1:
         st.markdown(
-            f"**[Created by: {q['creator']} -> Assigned to: {q['target']}]**"
-            f" {q['question']}"
+            f"**Q{q_num}. [Created by: {q['creator']} -> Assigned to:"
+            f" {q['target']}]** {q['question']}"
         )
         st.write(
             f" - Correct Answer: {q['answer']} ({q['options'][q['answer']]})"
@@ -199,8 +204,8 @@ with tab3:
           st.write(f" - Explanation: {q['explanation']}")
 
       with col2:
-        if st.button("🗑️ Delete", key=f"del_btn_{original_index}"):
-          db["questions"].pop(original_index)
+        if st.button("🗑️ Delete", key=f"del_btn_{original_idx}"):
+          db["questions"].pop(original_idx)
           save_data(db)
           st.success("Question deleted successfully!")
           st.rerun()
