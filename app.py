@@ -1,6 +1,5 @@
-import json
-import os
 import streamlit as st
+from supabase import create_client, Client
 
 # Page configuration
 st.set_page_config(
@@ -9,30 +8,58 @@ st.set_page_config(
     layout="centered",
 )
 
-DATA_FILE = "quiz_data.json"
+# --- SUPABASE CONFIGURATION ---
+# Apni real URL aur anon public key yahan daalein
+SUPABASE_URL = "https://dqcyhbbhtyweafwubcgs.supabase.co"  #[cite: 3, 4]
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxY3loYmJodHl3ZWFmd3ViY2dzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0OTYyMzgsImV4cCI6MjEwNjA3MjIzOH0.hq2Tw-0J4CB2Xe9fAmF5I-_i-jZefu9yVf1J-QH8nSA"  #[cite: 4]
 
 
-# Helper Functions to Load and Save JSON data securely
-def load_data():
-  if not os.path.exists(DATA_FILE):
-    return {"questions": []}
+@st.cache_resource
+def init_supabase():
+  return create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+supabase: Client = init_supabase()
+
+
+# Helper functions for Supabase Database
+def load_questions():
   try:
-    with open(DATA_FILE, "r") as f:
-      return json.load(f)
-  except json.JSONDecodeError:
-    return {"questions": []}
+    response = (
+        supabase.table("quiz_questions")
+        .select("*")
+        .order("id", desc=False)
+        .execute()
+    )
+    return response.data if response.data else []
+  except Exception as e:
+    st.error(f"Error loading questions: {e}")
+    return []
 
 
-def save_data(data):
-  with open(DATA_FILE, "w") as f:
-    json.dump(data, f, indent=4)
+def save_question_to_db(question_data):
+  try:
+    supabase.table("quiz_questions").insert(question_data).execute()
+    return True
+  except Exception as e:
+    st.error(f"Error saving question: {e}")
+    return False
+
+
+def delete_question_from_db(q_id):
+  try:
+    supabase.table("quiz_questions").delete().eq("id", q_id).execute()
+    return True
+  except Exception as e:
+    st.error(f"Error deleting question: {e}")
+    return False
 
 
 # Main UI Title
 st.title("🎯 Daily Quiz Battle (Osama & Kaifi)")
 st.write(
-    "Structured peer quizzing platform to enhance daily preparation. (5th"
-    " Option: Question not attempted)"
+    "Structured peer quizzing platform powered by Supabase Cloud. (5th Option:"
+    " Question not attempted)"
 )
 
 # Sidebar for User Selection
@@ -48,8 +75,8 @@ if current_user == "Select Name":
 # Determine the opponent
 opponent = "Kaifi" if current_user == "Osama" else "Osama"
 
-# Load database
-db = load_data()
+# Fetch questions from Supabase
+questions_list = load_questions()
 
 # Navigation Tabs
 tab1, tab2, tab3 = st.tabs(
@@ -89,52 +116,45 @@ with tab1:
             "creator": current_user,
             "target": opponent,
             "question": q_text,
-            "options": {
-                "Option (a)": opt_a,
-                "Option (b)": opt_b,
-                "Option (c)": opt_c,
-                "Option (d)": opt_d,
-                "Option (e)": "Question not attempted",
-            },
+            "opt_a": opt_a,
+            "opt_b": opt_b,
+            "opt_c": opt_c,
+            "opt_d": opt_d,
             "answer": correct_opt,
             "explanation": explanation_text.strip(),
         }
-        db["questions"].append(new_q)
-        save_data(db)
-        st.success("🎉 Question successfully saved to database!")
+
+        if save_question_to_db(new_q):
+          st.success("🎉 Question successfully saved to Supabase Cloud!")
+          st.rerun()
 
 # --- TAB 2: TAKE QUIZ ---
 with tab2:
   st.header(f"Quiz Session ({current_user}'s Turn)")
 
-  pending_with_indices = [
-      (i, q)
-      for i, q in enumerate(db["questions"])
-      if q.get("target") == current_user
+  pending_questions = [
+      q for q in questions_list if q.get("target") == current_user
   ]
 
-  if not pending_with_indices:
+  if not pending_questions:
     st.info(f"No pending questions assigned by {opponent} at the moment.")
   else:
-    st.write(f"Total Available Questions: {len(pending_with_indices)}")
-    st.write(
-        "Note: Once you check an answer, your result and explanation will stay"
-        " locked on the screen."
-    )
+    st.write(f"Total Available Questions: {len(pending_questions)}")
 
-    # Initialize session state storage for answers if not present
     if "quiz_attempts" not in st.session_state:
       st.session_state.quiz_attempts = {}
 
-    for original_idx, q in pending_with_indices[::-1]:
-      q_num = original_idx + 1
+    # Reverse list for recent-first display while keeping original absolute numbering
+    for idx, q in enumerate(pending_questions[::-1]):
+      q_id = q["id"]
+      q_num = (
+          questions_list.index(q) + 1
+      )  # Permanent absolute numbering from database ID index
       st.markdown(f"### Q{q_num}: {q['question']}")
 
-      attempt_key = f"attempted_{original_idx}"
+      attempt_key = f"attempted_{q_id}"
 
-      # Check if this question has already been submitted/attempted in this session
       if attempt_key in st.session_state.quiz_attempts:
-        # Show locked result view
         res = st.session_state.quiz_attempts[attempt_key]
         st.write(f"**Your Choice:** {res['selected_text']}")
 
@@ -156,19 +176,17 @@ with tab2:
         else:
           st.caption("*(No explanation provided by the creator)*")
 
-        # Option to re-attempt if needed
-        if st.button("🔄 Retry Question", key=f"retry_{original_idx}"):
+        if st.button("🔄 Retry Question", key=f"retry_{q_id}"):
           del st.session_state.quiz_attempts[attempt_key]
           st.rerun()
 
       else:
-        # Show interactive form for unattempted questions
-        with st.form(key=f"q_form_{original_idx}"):
+        with st.form(key=f"q_form_{q_id}"):
           opts_list = [
-              f"(a) {q['options']['Option (a)']}",
-              f"(b) {q['options']['Option (b)']}",
-              f"(c) {q['options']['Option (c)']}",
-              f"(d) {q['options']['Option (d)']}",
+              f"(a) {q['opt_a']}",
+              f"(b) {q['opt_b']}",
+              f"(c) {q['opt_c']}",
+              f"(d) {q['opt_d']}",
               "(e) Question not attempted",
           ]
 
@@ -176,7 +194,7 @@ with tab2:
               f"Select your response for Q{q_num}",
               opts_list,
               index=None,
-              key=f"ans_radio_{original_idx}",
+              key=f"ans_radio_{q_id}",
           )
 
           ans_submitted = st.form_submit_button("Check Answer")
@@ -189,12 +207,19 @@ with tab2:
             else:
               selected_key = f"Option ({selected_choice[1]})"
               correct_key = q["answer"]
-              correct_text = q["options"][correct_key]
+
+              # Map option key to text value
+              opt_map = {
+                  "Option (a)": q["opt_a"],
+                  "Option (b)": q["opt_b"],
+                  "Option (c)": q["opt_c"],
+                  "Option (d)": q["opt_d"],
+              }
+              correct_text = opt_map.get(correct_key, "")
 
               is_skipped = selected_key == "Option (e)"
               is_correct = selected_key == correct_key
 
-              # Save attempt details to session state
               st.session_state.quiz_attempts[attempt_key] = {
                   "selected_text": selected_choice,
                   "is_skipped": is_skipped,
@@ -209,17 +234,24 @@ with tab2:
 with tab3:
   st.header("📊 Database History & Management")
   st.write(
-      "Review all previously added questions with their permanent numbers"
-      " (Most recent first):"
+      "Review all previously added questions from Supabase Cloud (Most recent"
+      " first):"
   )
 
-  if not db["questions"]:
+  if not questions_list:
     st.write("Database is currently empty.")
   else:
-    reversed_management = list(enumerate(db["questions"]))[::-1]
+    for idx, q in enumerate(questions_list[::-1]):
+      q_id = q["id"]
+      q_num = len(questions_list) - idx
+      opt_map = {
+          "Option (a)": q["opt_a"],
+          "Option (b)": q["opt_b"],
+          "Option (c)": q["opt_c"],
+          "Option (d)": q["opt_d"],
+      }
+      correct_ans_text = opt_map.get(q["answer"], "")
 
-    for original_idx, q in reversed_management:
-      q_num = original_idx + 1
       col1, col2 = st.columns([4, 1])
 
       with col1:
@@ -227,22 +259,18 @@ with tab3:
             f"**Q{q_num}. [Created by: {q['creator']} -> Assigned to:"
             f" {q['target']}]** {q['question']}"
         )
-        st.write(
-            f" - Correct Answer: {q['answer']} ({q['options'][q['answer']]})"
-        )
+        st.write(f" - Correct Answer: {q['answer']} ({correct_ans_text})")
         if q.get("explanation"):
           st.write(f" - Explanation: {q['explanation']}")
 
       with col2:
-        if st.button("🗑️ Delete", key=f"del_btn_{original_idx}"):
-          db["questions"].pop(original_idx)
-          # Clean up session state for deleted question if exists
-          if f"attempted_{original_idx}" in st.session_state.get(
-              "quiz_attempts", {}
-          ):
-            del st.session_state.quiz_attempts[f"attempted_{original_idx}"]
-          save_data(db)
-          st.success("Question deleted successfully!")
-          st.rerun()
+        if st.button("🗑️ Delete", key=f"del_btn_{q_id}"):
+          if delete_question_from_db(q_id):
+            if f"attempted_{q_id}" in st.session_state.get(
+                "quiz_attempts", {}
+            ):
+              del st.session_state.quiz_attempts[f"attempted_{q_id}"]
+            st.success("Question deleted from Cloud!")
+            st.rerun()
 
       st.markdown("---")
