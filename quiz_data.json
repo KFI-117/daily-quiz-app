@@ -3,16 +3,16 @@
         {
             "creator": "Kaifi",
             "target": "Osama",
-            "question": "asdafafa",
+            "question": "Which type of language translator translates high-level source code into machine code line-by-line and must be present every time the program runs?",
             "options": {
-                "Option (a)": "adasdas",
-                "Option (b)": "ffgfg",
-                "Option (c)": "grtr",
-                "Option (d)": "wwsef",
+                "Option (a)": "Interpreter",
+                "Option (b)": "Compiler",
+                "Option (c)": "Assembler",
+                "Option (d)": "Linker",
                 "Option (e)": "Question not attempted"
             },
-            "answer": "Option (c)",
-            "explanation": "fsdgerhdfbhrtyhrt"
+            "answer": "Option (a)",
+            "explanation": "An interpreter translates and executes source code line-by-line at runtime, meaning it is required every time the code runs."
         }
     ]
 }
