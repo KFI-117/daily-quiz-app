@@ -29,61 +29,60 @@ def save_data(data):
 # Main UI Title
 st.title("🎯 Daily 5 Quiz Battle")
 st.write(
-    "Collaborative daily quiz portal for focused preparation. (5th Option: Question"
-    " not attempted)"
+    "Aapas me padhai karo, roz 5 sawaal pucho, aur prep mazboot karo! (5th"
+    " Option: Question not attempted)"
 )
 
 # Sidebar for User Selection
 st.sidebar.header("👤 User Profile")
 current_user = st.sidebar.selectbox(
-    "Select your profile:", ["Select User", "Osama", "Kaifi"]
+    "Kaun login kar raha hai?", ["Select Name", "Student A", "Student B"]
 )
 
-if current_user == "Select User":
-  st.warning("👈 Please select your user profile from the sidebar to proceed.")
+if current_user == "Select Name":
+  st.warning("👈 Pehle sidebar se apna naam select karo bhai!")
   st.stop()
 
 # Determine the opponent
-opponent = "Kaifi" if current_user == "Osama" else "Osama"
+opponent = "Student B" if current_user == "Student A" else "Student A"
 
 # Load database
 db = load_data()
 
 # Navigation Tabs
 tab1, tab2, tab3 = st.tabs(
-    ["📝 Add Questions", "🎯 Take Quiz", "📊 Database History"]
+    ["📝 Add Questions", "🎯 Take Quiz", "📊 View & Manage Questions"]
 )
 
 # --- TAB 1: ADD QUESTIONS ---
 with tab1:
-  st.header(f"Add Questions (Targeting: {opponent})")
+  st.header(f"Add Questions (For {opponent})")
   st.write(
-      f"Questions submitted here will appear in the quiz session for"
-      f" **{opponent}**."
+      f"Yahan aap jo sawaal daaloge, wo **{opponent}** ke liye quiz me dikhenge."
   )
 
   with st.form("add_question_form", clear_on_submit=True):
-    q_text = st.text_area("Question Statement:")
+    q_text = st.text_area("Sawaal (Question) yahan likho:")
     opt_a = st.text_input("Option (a)")
     opt_b = st.text_input("Option (b)")
     opt_c = st.text_input("Option (c)")
     opt_d = st.text_input("Option (d)")
 
     correct_opt = st.selectbox(
-        "Correct Answer",
+        "Sahi Jawab (Correct Option)",
         ["Option (a)", "Option (b)", "Option (c)", "Option (d)"],
     )
 
     explanation_text = st.text_area(
-        "Explanation (Optional - Provide reasoning for the correct answer):"
+        "Explanation (Optional - Sahi jawab ka reason yahan likh sakte hain):"
     )
 
-    submitted = st.form_submit_button("Save Question")
+    submitted = st.form_submit_button("Sawaal Save Karein")
 
     if submitted:
       if not q_text or not opt_a or not opt_b or not opt_c or not opt_d:
         st.error(
-            "Please fill in all options (a, b, c, d) and the question field."
+            "Bhai a, b, c, d saare options aur sawaal bharna zaroori hai!"
         )
       else:
         new_q = {
@@ -102,7 +101,7 @@ with tab1:
         }
         db["questions"].append(new_q)
         save_data(db)
-        st.success("🎉 Question successfully saved to database!")
+        st.success("🎉 Sawaal safaltapoorvak save ho gaya!")
 
 # --- TAB 2: TAKE QUIZ ---
 with tab2:
@@ -114,12 +113,12 @@ with tab2:
   ]
 
   if not pending_questions:
-    st.info(f"No pending questions available from {opponent} yet.")
+    st.info(f"Abhi {opponent} ne tumhare liye koi naya sawaal nahi dala hai!")
   else:
     st.write(f"Total available questions: {len(pending_questions)}")
     st.write(
-        "Note: Submit individual answers to view instant evaluation and"
-        " explanations."
+        "Note: Har question ke neeche submit karne par turant result aur"
+        " explanation dikhega."
     )
 
     for idx, q in enumerate(pending_questions):
@@ -135,7 +134,7 @@ with tab2:
         ]
 
         selected_choice = st.radio(
-            f"Select option for Q{idx + 1}",
+            f"Select options for Q{idx + 1}",
             opts_list,
             index=None,
             key=f"ans_radio_{idx}",
@@ -146,7 +145,7 @@ with tab2:
         if ans_submitted:
           if selected_choice is None:
             st.warning(
-                "Please select an option or choose 'Question not attempted'."
+                "Pehle koi option select karo ya 'Question not attempted' chuno!"
             )
           else:
             selected_key = f"Option ({selected_choice[1]})"
@@ -154,41 +153,57 @@ with tab2:
 
             if selected_key == "Option (e)":
               st.info(
-                  "ℹ️ Status: **Question not attempted**. Correct Answer was:"
-                  f" **{q['options'][correct_key]}**"
+                  "ℹ️ Yeh question aapne **Attempt Nahi Kiya** chuna hai. Sahi"
+                  f" Jawab tha: **{q['options'][correct_key]}**"
               )
             elif selected_key == correct_key:
-              st.success("✅ Correct Answer! Excellent work.")
+              st.success("✅ Sahi Jawab! Shandar!")
             else:
               st.error(
-                  "❌ Incorrect Answer. Correct Answer was:"
+                  "❌ Galat Jawab! Sahi Jawab yeh tha:"
                   f" **{q['options'][correct_key]}**"
               )
 
-            # Show explanation if available
             if q.get("explanation"):
               st.info(f"💡 **Explanation:** {q['explanation']}")
             else:
               st.caption(
-                  "*(No explanation provided by the question creator)*"
+                  "*(Creator ne is question ke liye koi explanation nahi"
+                  " dala)*"
               )
       st.divider()
 
-# --- TAB 3: VIEW ALL QUESTIONS ---
+# --- TAB 3: VIEW & MANAGE QUESTIONS ---
 with tab3:
-  st.header("📚 Database History")
-  st.write("Complete repository of all submitted questions:")
+  st.header("📊 Database History & Management")
+  st.write(
+      "Yahan saare add kiye gaye sawaal dikhenge. Agar koi galat ho toh use"
+      " delete kar sakte hain:"
+  )
+
   if not db["questions"]:
-    st.write("Database is currently empty.")
+    st.write("Database abhi khali hai.")
   else:
     for i, q in enumerate(db["questions"]):
-      st.markdown(
-          f"**{i + 1}. [Created By: {q['creator']} -> Assigned To:"
-          f" {q['target']}]** {q['question']}"
-      )
-      st.write(
-          f" - Correct Answer: {q['answer']} ({q['options'][q['answer']]})"
-      )
-      if q.get("explanation"):
-        st.write(f" - Explanation: {q['explanation']}")
+      col1, col2 = st.columns([4, 1])
+
+      with col1:
+        st.markdown(
+            f"**{i + 1}. [By: {q['creator']} -> For: {q['target']}]**"
+            f" {q['question']}"
+        )
+        st.write(
+            f" - Correct Answer: {q['answer']} ({q['options'][q['answer']]})"
+        )
+        if q.get("explanation"):
+          st.write(f" - Explanation: {q['explanation']}")
+
+      with col2:
+        # Delete button for each question
+        if st.button("🗑️ Delete", key=f"del_btn_{i}"):
+          db["questions"].pop(i)
+          save_data(db)
+          st.success("Sawaal delete ho gaya!")
+          st.rerun()
+
       st.markdown("---")
