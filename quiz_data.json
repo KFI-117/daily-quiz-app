@@ -1,0 +1,18 @@
+{
+    "questions": [
+        {
+            "creator": "Kaifi",
+            "target": "Osama",
+            "question": "asdafafa",
+            "options": {
+                "Option (a)": "adasdas",
+                "Option (b)": "ffgfg",
+                "Option (c)": "grtr",
+                "Option (d)": "wwsef",
+                "Option (e)": "Question not attempted"
+            },
+            "answer": "Option (c)",
+            "explanation": "fsdgerhdfbhrtyhrt"
+        }
+    ]
+}
