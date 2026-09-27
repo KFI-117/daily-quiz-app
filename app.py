@@ -107,10 +107,10 @@ with tab1:
 with tab2:
   st.header(f"Quiz Session ({current_user}'s Turn)")
 
-  # Filter questions meant for the current user
+  # Filter questions meant for the current user and reverse order (Recent First)
   pending_questions = [
       q for q in db["questions"] if q.get("target") == current_user
-  ]
+  ][::-1]
 
   if not pending_questions:
     st.info(f"No pending questions assigned by {opponent} at the moment.")
@@ -118,7 +118,7 @@ with tab2:
     st.write(f"Total Available Questions: {len(pending_questions)}")
     st.write(
         "Note: Submit each question individually to view instant feedback and"
-        " explanation."
+        " explanation. (Most recent questions appear first)"
     )
 
     for idx, q in enumerate(pending_questions):
@@ -174,20 +174,23 @@ with tab2:
 with tab3:
   st.header("📊 Database History & Management")
   st.write(
-      "Review all previously added questions. You can delete any invalid or"
-      " incorrect entries below:"
+      "Review all previously added questions (Most recent first). You can"
+      " delete any invalid or incorrect entries below:"
   )
 
   if not db["questions"]:
     st.write("Database is currently empty.")
   else:
-    for i, q in enumerate(db["questions"]):
+    # Reverse order for management view as well so latest is on top
+    reversed_questions = list(enumerate(db["questions"]))[::-1]
+
+    for original_index, q in reversed_questions:
       col1, col2 = st.columns([4, 1])
 
       with col1:
         st.markdown(
-            f"**{i + 1}. [Created by: {q['creator']} -> Assigned to:"
-            f" {q['target']}]** {q['question']}"
+            f"**[Created by: {q['creator']} -> Assigned to: {q['target']}]**"
+            f" {q['question']}"
         )
         st.write(
             f" - Correct Answer: {q['answer']} ({q['options'][q['answer']]})"
@@ -196,8 +199,8 @@ with tab3:
           st.write(f" - Explanation: {q['explanation']}")
 
       with col2:
-        if st.button("🗑️ Delete", key=f"del_btn_{i}"):
-          db["questions"].pop(i)
+        if st.button("🗑️ Delete", key=f"del_btn_{original_index}"):
+          db["questions"].pop(original_index)
           save_data(db)
           st.success("Question deleted successfully!")
           st.rerun()
