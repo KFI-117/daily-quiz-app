@@ -107,7 +107,6 @@ with tab1:
 with tab2:
   st.header(f"Quiz Session ({current_user}'s Turn)")
 
-  # Get pending questions along with their original absolute index in the database
   pending_with_indices = [
       (i, q)
       for i, q in enumerate(db["questions"])
@@ -119,59 +118,91 @@ with tab2:
   else:
     st.write(f"Total Available Questions: {len(pending_with_indices)}")
     st.write(
-        "Note: Most recent questions appear first, but original question"
-        " numbers remain fixed."
+        "Note: Once you check an answer, your result and explanation will stay"
+        " locked on the screen."
     )
 
-    # Reverse for display (Recent first)
+    # Initialize session state storage for answers if not present
+    if "quiz_attempts" not in st.session_state:
+      st.session_state.quiz_attempts = {}
+
     for original_idx, q in pending_with_indices[::-1]:
-      q_num = original_idx + 1  # Fixed absolute numbering
+      q_num = original_idx + 1
       st.markdown(f"### Q{q_num}: {q['question']}")
 
-      with st.form(key=f"q_form_{original_idx}"):
-        opts_list = [
-            f"(a) {q['options']['Option (a)']}",
-            f"(b) {q['options']['Option (b)']}",
-            f"(c) {q['options']['Option (c)']}",
-            f"(d) {q['options']['Option (d)']}",
-            "(e) Question not attempted",
-        ]
+      attempt_key = f"attempted_{original_idx}"
 
-        selected_choice = st.radio(
-            f"Select your response for Q{q_num}",
-            opts_list,
-            index=None,
-            key=f"ans_radio_{original_idx}",
-        )
+      # Check if this question has already been submitted/attempted in this session
+      if attempt_key in st.session_state.quiz_attempts:
+        # Show locked result view
+        res = st.session_state.quiz_attempts[attempt_key]
+        st.write(f"**Your Choice:** {res['selected_text']}")
 
-        ans_submitted = st.form_submit_button("Check Answer")
+        if res["is_skipped"]:
+          st.info(
+              f"ℹ️ You marked this question as **Not Attempted**. Correct"
+              f" Answer: **{res['correct_text']}**"
+          )
+        elif res["is_correct"]:
+          st.success("✅ Correct Answer! Excellent work.")
+        else:
+          st.error(
+              f"❌ Incorrect Answer. Correct Answer was:"
+              f" **{res['correct_text']}**"
+          )
 
-        if ans_submitted:
-          if selected_choice is None:
-            st.warning(
-                "Please select an option or choose 'Question not attempted'."
-            )
-          else:
-            selected_key = f"Option ({selected_choice[1]})"
-            correct_key = q["answer"]
+        if q.get("explanation"):
+          st.info(f"💡 **Explanation:** {q['explanation']}")
+        else:
+          st.caption("*(No explanation provided by the creator)*")
 
-            if selected_key == "Option (e)":
-              st.info(
-                  "ℹ️ You marked this question as **Not Attempted**. Correct"
-                  f" Answer: **{q['options'][correct_key]}**"
+        # Option to re-attempt if needed
+        if st.button("🔄 Retry Question", key=f"retry_{original_idx}"):
+          del st.session_state.quiz_attempts[attempt_key]
+          st.rerun()
+
+      else:
+        # Show interactive form for unattempted questions
+        with st.form(key=f"q_form_{original_idx}"):
+          opts_list = [
+              f"(a) {q['options']['Option (a)']}",
+              f"(b) {q['options']['Option (b)']}",
+              f"(c) {q['options']['Option (c)']}",
+              f"(d) {q['options']['Option (d)']}",
+              "(e) Question not attempted",
+          ]
+
+          selected_choice = st.radio(
+              f"Select your response for Q{q_num}",
+              opts_list,
+              index=None,
+              key=f"ans_radio_{original_idx}",
+          )
+
+          ans_submitted = st.form_submit_button("Check Answer")
+
+          if ans_submitted:
+            if selected_choice is None:
+              st.warning(
+                  "Please select an option or choose 'Question not attempted'."
               )
-            elif selected_key == correct_key:
-              st.success("✅ Correct Answer! Excellent work.")
             else:
-              st.error(
-                  "❌ Incorrect Answer. Correct Answer was:"
-                  f" **{q['options'][correct_key]}**"
-              )
+              selected_key = f"Option ({selected_choice[1]})"
+              correct_key = q["answer"]
+              correct_text = q["options"][correct_key]
 
-            if q.get("explanation"):
-              st.info(f"💡 **Explanation:** {q['explanation']}")
-            else:
-              st.caption("*(No explanation provided by the creator)*")
+              is_skipped = selected_key == "Option (e)"
+              is_correct = selected_key == correct_key
+
+              # Save attempt details to session state
+              st.session_state.quiz_attempts[attempt_key] = {
+                  "selected_text": selected_choice,
+                  "is_skipped": is_skipped,
+                  "is_correct": is_correct,
+                  "correct_text": correct_text,
+              }
+              st.rerun()
+
       st.divider()
 
 # --- TAB 3: VIEW & MANAGE QUESTIONS ---
@@ -185,7 +216,6 @@ with tab3:
   if not db["questions"]:
     st.write("Database is currently empty.")
   else:
-    # Reverse order for management view, keeping original numbering
     reversed_management = list(enumerate(db["questions"]))[::-1]
 
     for original_idx, q in reversed_management:
@@ -206,6 +236,11 @@ with tab3:
       with col2:
         if st.button("🗑️ Delete", key=f"del_btn_{original_idx}"):
           db["questions"].pop(original_idx)
+          # Clean up session state for deleted question if exists
+          if f"attempted_{original_idx}" in st.session_state.get(
+              "quiz_attempts", {}
+          ):
+            del st.session_state.quiz_attempts[f"attempted_{original_idx}"]
           save_data(db)
           st.success("Question deleted successfully!")
           st.rerun()
