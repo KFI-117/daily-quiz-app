@@ -261,9 +261,16 @@ with tab3:
         valid_attempts = [att for att in user_attempts.values() if "Question not attempted" not in att["selected_answer"]]
         skipped_count = sum(1 for att in user_attempts.values() if "Question not attempted" in att["selected_answer"])
         
-        total_attempted = len(valid_attempts)
-        correct_count = sum(1 for att in valid_attempts if att["is_correct"])
-        incorrect_count = total_attempted - correct_count
+        total_attempted = len(user_attempts)
+        correct_count = sum(
+            1 for att in user_attempts.values() if att["is_correct"]
+        )
+        skipped_count = sum(
+            1
+            for att in user_attempts.values()
+            if "Question not attempted" in att["selected_answer"]
+        )
+        incorrect_count = total_attempted - correct_count - skipped_count
 
         raw_score = correct_count * 1.0
         negative_penalty = round(incorrect_count * 0.33, 2)
