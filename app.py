@@ -257,8 +257,9 @@ with tab3:
     if not user_attempts:
         st.info("No attempts recorded on cloud yet. Attempt questions in the 'Attempt Quiz' tab to populate your scoreboard.")
     else:
-        valid_attempts = [att for att in user_attempts.values() if not att["selected_answer"].startswith("(e)")]
-        skipped_count = sum(1 for att in user_attempts.values() if att["selected_answer"].startswith("(e)"))
+        # Fixed condition to properly catch 'Question not attempted' string stored in database
+        valid_attempts = [att for att in user_attempts.values() if "Question not attempted" not in att["selected_answer"]]
+        skipped_count = sum(1 for att in user_attempts.values() if "Question not attempted" in att["selected_answer"])
         
         total_attempted = len(valid_attempts)
         correct_count = sum(1 for att in valid_attempts if att["is_correct"])
@@ -283,7 +284,7 @@ with tab3:
         
         if skipped_count > 0:
             st.caption(f"Note: You have marked {skipped_count} question(s) as 'Not attempted'.")
-
+            
 # --- TAB 4: VIEW & MANAGE QUESTIONS ---
 with tab4:
     st.header("📊 Database History & Management")
