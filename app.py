@@ -40,7 +40,6 @@ tab1, tab2, tab3, tab4 = st.tabs(["📝 Take Quiz", "➕ Add Questions", "📊 P
 with tab1:
     st.header(f"Assessment Hub — Created by {target_user}")
     
-    # Fetch questions created by the other user
     response = supabase.table("quiz_questions").select("*").eq("creator", target_user).eq("target", st.session_state.user).execute()
     questions = response.data
     
@@ -52,7 +51,8 @@ with tab1:
             for idx, q in enumerate(questions):
                 st.subheader(f"Question {idx + 1}")
                 st.write(q["question"])
-                options = [q["option_a"], q["option_b"], q["option_c"], q["option_d"]]
+                # Fixed column names matching your database (opt_a, opt_b, opt_c, opt_d)
+                options = [q["opt_a"], q["opt_b"], q["opt_c"], q["opt_d"]]
                 user_answers[q["id"]] = st.radio(
                     f"Select your option for Q{idx + 1}:",
                     options,
@@ -76,17 +76,14 @@ with tab1:
                     else:
                         incorrect_count += 1
                         
-                    # Save attempt history in database for scoreboard tracking
                     attempt_data = {
                         "user": st.session_state.user,
                         "question_id": q["id"],
                         "selected_answer": selected_ans,
                         "is_correct": is_correct
                     }
-                    # Upsert attempt record
                     supabase.table("quiz_attempts").upsert(attempt_data, on_conflict="user,question_id").execute()
                 
-                # Calculate scores
                 raw_score = correct_count * 1.0
                 negative_penalty = incorrect_count * 0.33
                 net_score = round(raw_score - negative_penalty, 2)
@@ -125,10 +122,10 @@ with tab2:
                     "creator": st.session_state.user,
                     "target": target_user,
                     "question": q_text,
-                    "option_a": opt_a,
-                    "option_b": opt_b,
-                    "option_c": opt_c,
-                    "option_d": opt_d,
+                    "opt_a": opt_a,
+                    "opt_b": opt_b,
+                    "opt_c": opt_c,
+                    "opt_d": opt_d,
                     "answer": correct_ans,
                     "explanation": explanation
                 }
@@ -142,18 +139,15 @@ with tab3:
     st.header("📊 Performance Analytics & Scoreboard")
     st.markdown("Track comprehensive evaluation metrics, accuracy rates, and net scores with negative marking penalties.")
     
-    # Fetch attempt logs from database
     attempts_resp = supabase.table("quiz_attempts").select("*").execute()
     all_attempts = attempts_resp.data
     
-    # Fetch all questions to map creators and targets
     questions_resp = supabase.table("quiz_questions").select("*").execute()
     all_questions = {q["id"]: q for q in questions_resp.data}
     
     if not all_attempts:
         st.info("No assessment records found yet. Complete a quiz to populate the analytics dashboard.")
     else:
-        # Filter attempts where current user was the target (i.e. evaluated user)
         user_attempts = [
             att for att in all_attempts 
             if att["question_id"] in all_questions and all_questions[att["question_id"]]["target"] == st.session_state.user
@@ -171,7 +165,6 @@ with tab3:
             net_score = round(raw_score - negative_deduction, 2)
             accuracy_rate = round((correct_answers / total_attempted) * 100, 2) if total_attempted > 0 else 0.0
             
-            # Display Metrics
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Total Attempted", total_attempted)
             col2.metric("Correct Answers", correct_answers)
@@ -203,7 +196,7 @@ with tab4:
     st.markdown("Review or purge questions you have previously authored.")
     
     my_questions_resp = supabase.table("quiz_questions").select("*").eq("creator", st.session_state.user).execute()
-    my_questions = my_questions_res = my_questions_resp.data
+    my_questions = my_questions_resp.data
     
     if not my_questions:
         st.info("You have not authored any questions yet.")
