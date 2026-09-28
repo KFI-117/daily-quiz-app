@@ -36,6 +36,20 @@ def load_questions():
         return []
 
 
+def load_user_attempts(username):
+    try:
+        response = (
+            supabase.table("quiz_attempts")
+            .select("*")
+            .eq("user", username)
+            .execute()
+        )
+        # Map question_id to attempt record for fast lookup
+        return {att["question_id"]: att for att in response.data} if response.data else {}
+    except Exception as e:
+        return {}
+
+
 def save_question_to_db(question_data):
     try:
         supabase.table("quiz_questions").insert(question_data).execute()
@@ -74,8 +88,9 @@ if current_user == "Select Name":
 # Determine the opponent
 opponent = "Kaifi" if current_user == "Osama" else "Osama"
 
-# Fetch questions from Supabase
+# Fetch questions and database-persisted attempts from Supabase
 questions_list = load_questions()
+user_attempts = load_user_attempts(current_user)
 
 # Navigation Tabs (Added Scoreboard Tab)
 tab1, tab2, tab3, tab4 = st.tabs(
@@ -140,32 +155,35 @@ with tab2:
     else:
         st.write(f"Total Available Questions: {len(pending_questions)}")
 
-        if "quiz_attempts" not in st.session_state:
-            st.session_state.quiz_attempts = {}
-
         # Reverse list for recent-first display while keeping original absolute numbering
         for idx, q in enumerate(pending_questions[::-1]):
             q_id = q["id"]
             q_num = questions_list.index(q) + 1  # Permanent absolute numbering from database ID index
             st.markdown(f"### Q{q_num}: {q['question']}")
 
-            attempt_key = f"attempted_{q_id}"
+            if q_id in user_attempts:
+                att = user_attempts[q_id]
+                st.write(f"**Your Choice:** {att['selected_answer']}")
 
-            if attempt_key in st.session_state.quiz_attempts:
-                res = st.session_state.quiz_attempts[attempt_key]
-                st.write(f"**Your Choice:** {res['selected_text']}")
+                opt_map = {
+                    "Option (a)": q["opt_a"],
+                    "Option (b)": q["opt_b"],
+                    "Option (c)": q["opt_c"],
+                    "Option (d)": q["opt_d"],
+                }
+                correct_text = opt_map.get(q["answer"], "")
 
-                if res["is_skipped"]:
+                if att["selected_answer"] == "Option (e) Question not attempted":
                     st.info(
                         f"ℹ️ You marked this question as **Not Attempted**. Correct"
-                        f" Answer: **{res['correct_text']}**"
+                        f" Answer: **{correct_text}**"
                     )
-                elif res["is_correct"]:
+                elif att["is_correct"]:
                     st.success("✅ Correct Answer! Excellent work.")
                 else:
                     st.error(
                         f"❌ Incorrect Answer. Correct Answer was:"
-                        f" **{res['correct_text']}**"
+                        f" **{correct_text}**"
                     )
 
                 if q.get("explanation"):
@@ -173,9 +191,14 @@ with tab2:
                 else:
                     st.caption("*(No explanation provided by the creator)*")
 
+                # Retry button: deletes the attempt from Supabase database permanently
                 if st.button("🔄 Retry Question", key=f"retry_{q_id}"):
-                    del st.session_state.quiz_attempts[attempt_key]
-                    st.rerun()
+                    try:
+                        supabase.table("quiz_attempts").delete().eq("user", current_user).eq("question_id", q_id).execute()
+                        st.success("Attempt reset successfully from cloud!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error resetting attempt: {e}")
 
             else:
                 with st.form(key=f"q_form_{q_id}"):
@@ -202,27 +225,27 @@ with tab2:
                                 "Please select an option or choose 'Question not attempted'."
                             )
                         else:
-                            selected_key = f"Option ({selected_choice[1]})"
-                            correct_key = q["answer"]
+                            if selected_choice.startswith("(e)"):
+                                formatted_choice = "Option (e) Question not attempted"
+                                is_correct = False
+                            else:
+                                option_letter = selected_choice[1]
+                                formatted_choice = f"Option ({option_letter}) {q[f'opt_{option_letter}']}"
+                                is_correct = (f"Option ({option_letter})" == q["answer"])
 
-                            opt_map = {
-                                "Option (a)": q["opt_a"],
-                                "Option (b)": q["opt_b"],
-                                "Option (c)": q["opt_c"],
-                                "Option (d)": q["opt_d"],
+                            attempt_payload = {
+                                "user": current_user,
+                                "question_id": q_id,
+                                "selected_answer": formatted_choice,
+                                "is_correct": is_correct
                             }
-                            correct_text = opt_map.get(correct_key, "")
 
-                            is_skipped = selected_key == "Option (e)"
-                            is_correct = selected_key == correct_key
-
-                            st.session_state.quiz_attempts[attempt_key] = {
-                                "selected_text": selected_choice,
-                                "is_skipped": is_skipped,
-                                "is_correct": is_correct,
-                                "correct_text": correct_text,
-                            }
-                            st.rerun()
+                            try:
+                                supabase.table("quiz_attempts").upsert(attempt_payload, on_conflict="user,question_id").execute()
+                                st.success("Answer recorded successfully on cloud!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error recording attempt: {e}")
 
             st.divider()
 
@@ -231,16 +254,15 @@ with tab3:
     st.header(f"📊 Performance Scoreboard ({current_user})")
     st.markdown("Track evaluation metrics, correct/incorrect attempts, and net scores with 1/3 negative marking (-0.33).")
 
-    if "quiz_attempts" not in st.session_state or not st.session_state.quiz_attempts:
-        st.info("No attempts recorded yet. Attempt questions in the 'Attempt Quiz' tab to generate your scoreboard metrics.")
+    if not user_attempts:
+        st.info("No attempts recorded on cloud yet. Attempt questions in the 'Attempt Quiz' tab to populate your scoreboard.")
     else:
-        # Filter current user's attempts from session state
-        user_attempts = [res for key, res in st.session_state.quiz_attempts.items() if not res["is_skipped"]]
-        skipped_count = sum(1 for key, res in st.session_state.quiz_attempts.items() if res["is_skipped"])
+        valid_attempts = [att for att in user_attempts.values() if not att["selected_answer"].startswith("(e)")]
+        skipped_count = sum(1 for att in user_attempts.values() if att["selected_answer"].startswith("(e)"))
         
-        total_attempted = len(user_attempts)
-        correct_count = sum(1 for res in user_attempts if res["is_correct"])
-        incorrect_count = sum(1 for res in user_attempts if not res["is_correct"])
+        total_attempted = len(valid_attempts)
+        correct_count = sum(1 for att in valid_attempts if att["is_correct"])
+        incorrect_count = total_attempted - correct_count
 
         raw_score = correct_count * 1.0
         negative_penalty = round(incorrect_count * 0.33, 2)
@@ -256,8 +278,8 @@ with tab3:
         st.markdown("---")
 
         col_score1, col_score2 = st.columns(2)
-        col_score1.metric("Score Without Negative Marking", f"{raw_score} / {len(st.session_state.quiz_attempts)}")
-        col_score2.metric("Net Score (With 1/3 Negative Marking)", f"{net_score} / {len(st.session_state.quiz_attempts)}")
+        col_score1.metric("Score Without Negative Marking", f"{raw_score} / {len(user_attempts)}")
+        col_score2.metric("Net Score (With 1/3 Negative Marking)", f"{net_score} / {len(user_attempts)}")
         
         if skipped_count > 0:
             st.caption(f"Note: You have marked {skipped_count} question(s) as 'Not attempted'.")
@@ -298,10 +320,6 @@ with tab4:
             with col2:
                 if st.button("🗑️ Delete", key=f"del_btn_{q_id}"):
                     if delete_question_from_db(q_id):
-                        if f"attempted_{q_id}" in st.session_state.get(
-                            "quiz_attempts", {}
-                        ):
-                            del st.session_state.quiz_attempts[f"attempted_{q_id}"]
                         st.success("Question deleted from Cloud!")
                         st.rerun()
 
