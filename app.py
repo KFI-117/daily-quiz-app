@@ -1,210 +1,308 @@
 import streamlit as st
 from supabase import create_client, Client
 
+# Page configuration
+st.set_page_config(
+    page_title="Daily Quiz Battle: Osama vs Kaifi",
+    page_icon="🎯",
+    layout="centered",
+)
+
 # --- SUPABASE CONFIGURATION ---
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "https://dqcyhbbhtyweafwubcgs.supabase.co")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxY3loYmJodHl3ZWFmd3ViY2dzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0OTYyMzgsImV4cCI6MjEwNjA3MjIzOH0.hq2Tw-0J4CB2Xe9fAmF5I-_i-jZefu9yVf1J-QH8nSA")
 
+
 @st.cache_resource
-def init_connection() -> Client:
+def init_supabase():
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
-supabase = init_connection()
 
-# --- PAGE SETUP ---
-st.set_page_config(page_title="Osama & Kaifi Daily Quiz Platform", page_icon="📊", layout="wide")
+supabase: Client = init_supabase()
 
-# --- INITIALIZE SESSION STATE ---
-if "user" not in st.session_state:
-    st.session_state.user = "Osama"
 
-# --- SIDEBAR: USER & PROFILE SELECTION ---
-st.sidebar.title("🔐 User Authentication")
-selected_user = st.sidebar.selectbox("Select Your Profile", ["Osama", "Kaifi"], index=0 if st.session_state.user == "Osama" else 1)
-st.session_state.user = selected_user
+# Helper functions for Supabase Database
+def load_questions():
+    try:
+        response = (
+            supabase.table("quiz_questions")
+            .select("*")
+            .order("id", desc=False)
+            .execute()
+        )
+        return response.data if response.data else []
+    except Exception as e:
+        st.error(f"Error loading questions: {e}")
+        return []
 
-st.sidebar.markdown("---")
-st.sidebar.info(f"Logged in as: **{st.session_state.user}**")
-target_user = "Kaifi" if st.session_state.user == "Osama" else "Osama"
-st.sidebar.write(f"You are viewing questions created by: **{target_user}**")
 
-st.title("📚 Interactive Daily Quiz Platform")
-st.markdown(f"Welcome back, **{st.session_state.user}**! Test your knowledge or contribute new challenges.")
+def save_question_to_db(question_data):
+    try:
+        supabase.table("quiz_questions").insert(question_data).execute()
+        return True
+    except Exception as e:
+        st.error(f"Error saving question: {e}")
+        return False
 
-# --- NAVIGATION TABS ---
-tab1, tab2, tab3, tab4 = st.tabs(["📝 Take Quiz", "➕ Add Questions", "📊 Performance Scoreboard", "⚙️ Manage Questions"])
 
-# ==========================================
-# TAB 1: TAKE QUIZ
-# ==========================================
+def delete_question_from_db(q_id):
+    try:
+        supabase.table("quiz_questions").delete().eq("id", q_id).execute()
+        return True
+    except Exception as e:
+        st.error(f"Error deleting question: {e}")
+        return False
+
+
+# Main UI Title
+st.title("🎯 Daily Quiz Battle (Osama & Kaifi)")
+st.write(
+    "Structured peer quizzing platform powered by Supabase Cloud. (5th Option:"
+    " Question not attempted)"
+)
+
+# Sidebar for User Selection
+st.sidebar.header("👤 User Profile")
+current_user = st.sidebar.selectbox(
+    "Select User Profile", ["Select Name", "Osama", "Kaifi"]
+)
+
+if current_user == "Select Name":
+    st.warning("⚠️ Please select your profile from the sidebar to proceed.")
+    st.stop()
+
+# Determine the opponent
+opponent = "Kaifi" if current_user == "Osama" else "Osama"
+
+# Fetch questions from Supabase
+questions_list = load_questions()
+
+# Navigation Tabs (Added Scoreboard Tab)
+tab1, tab2, tab3, tab4 = st.tabs(
+    ["📝 Add Questions", "🎯 Attempt Quiz", "📊 Scoreboard & Analytics", "⚙️ Manage Questions"]
+)
+
+# --- TAB 1: ADD QUESTIONS ---
 with tab1:
-    st.header(f"Assessment Hub — Created by {target_user}")
-    
-    response = supabase.table("quiz_questions").select("*").eq("creator", target_user).eq("target", st.session_state.user).execute()
-    questions = response.data
-    
-    if not questions:
-        st.info(f"No active questions available from {target_user} at the moment. Check back later or request a new batch!")
-    else:
-        with st.form("quiz_submission_form"):
-            user_answers = {}
-            for idx, q in enumerate(questions):
-                st.subheader(f"Question {idx + 1}")
-                st.write(q["question"])
-                # Fixed column names matching your database (opt_a, opt_b, opt_c, opt_d)
-                options = [q["opt_a"], q["opt_b"], q["opt_c"], q["opt_d"]]
-                user_answers[q["id"]] = st.radio(
-                    f"Select your option for Q{idx + 1}:",
-                    options,
-                    key=f"q_{q['id']}"
-                )
-                st.markdown("---")
-            
-            submit_quiz = st.form_submit_button("Submit Assessment")
-            
-            if submit_quiz:
-                correct_count = 0
-                incorrect_count = 0
-                attempted_count = len(questions)
-                
-                for q in questions:
-                    selected_ans = user_answers[q["id"]]
-                    is_correct = (selected_ans == q["answer"])
-                    
-                    if is_correct:
-                        correct_count += 1
-                    else:
-                        incorrect_count += 1
-                        
-                    attempt_data = {
-                        "user": st.session_state.user,
-                        "question_id": q["id"],
-                        "selected_answer": selected_ans,
-                        "is_correct": is_correct
-                    }
-                    supabase.table("quiz_attempts").upsert(attempt_data, on_conflict="user,question_id").execute()
-                
-                raw_score = correct_count * 1.0
-                negative_penalty = incorrect_count * 0.33
-                net_score = round(raw_score - negative_penalty, 2)
-                
-                st.success("Assessment submitted successfully and recorded on the cloud database!")
-                st.metric(label="Raw Score (Without Negative Marking)", value=f"{raw_score} / {attempted_count}")
-                st.metric(label="Net Score (With 1/3 Negative Marking)", value=f"{net_score} / {attempted_count}")
+    st.header(f"Add New Question (Target: {opponent})")
+    st.write(
+        f"Questions added here will appear in the quiz session for **{opponent}**."
+    )
 
-# ==========================================
-# TAB 2: ADD QUESTIONS
-# ==========================================
-with tab2:
-    st.header(f"Contribute Questions for {target_user}")
-    st.markdown("Draft and publish high-quality questions for your peer evaluation.")
-    
-    with st.form("add_question_form"):
-        q_text = st.text_area("Question Statement")
-        col1, col2 = st.columns(2)
-        with col1:
-            opt_a = st.text_input("Option A")
-            opt_b = st.text_input("Option B")
-        with col2:
-            opt_c = st.text_input("Option C")
-            opt_d = st.text_input("Option D")
-            
-        correct_ans = st.selectbox("Correct Answer", [opt_a, opt_b, opt_c, opt_d] if opt_a and opt_b else ["Option A", "Option B"])
-        explanation = st.text_area("Detailed Explanation")
-        
-        submitted = st.form_submit_button("Publish Question")
-        
+    with st.form("add_question_form", clear_on_submit=True):
+        q_text = st.text_area("Question Statement:")
+        opt_a = st.text_input("Option (a)")
+        opt_b = st.text_input("Option (b)")
+        opt_c = st.text_input("Option (c)")
+        opt_d = st.text_input("Option (d)")
+
+        correct_opt = st.selectbox(
+            "Correct Answer Option",
+            ["Option (a)", "Option (b)", "Option (c)", "Option (d)"],
+        )
+
+        explanation_text = st.text_area(
+            "Explanation (Optional - Provide reasoning for the correct answer):"
+        )
+
+        submitted = st.form_submit_button("Save Question")
+
         if submitted:
-            if not q_text or not opt_a or not opt_b:
-                st.error("Please fill in the essential question details and options.")
+            if not q_text or not opt_a or not opt_b or not opt_c or not opt_d:
+                st.error("Please fill in all options (a, b, c, d) and the question text.")
             else:
                 new_q = {
-                    "creator": st.session_state.user,
-                    "target": target_user,
+                    "creator": current_user,
+                    "target": opponent,
                     "question": q_text,
                     "opt_a": opt_a,
                     "opt_b": opt_b,
                     "opt_c": opt_c,
                     "opt_d": opt_d,
-                    "answer": correct_ans,
-                    "explanation": explanation
+                    "answer": correct_opt,
+                    "explanation": explanation_text.strip(),
                 }
-                supabase.table("quiz_questions").insert(new_q).execute()
-                st.success(f"Question successfully published for {target_user}!")
 
-# ==========================================
-# TAB 3: PERFORMANCE SCOREBOARD
-# ==========================================
+                if save_question_to_db(new_q):
+                    st.success("🎉 Question successfully saved to Supabase Cloud!")
+                    st.rerun()
+
+# --- TAB 2: TAKE QUIZ ---
+with tab2:
+    st.header(f"Quiz Session ({current_user}'s Turn)")
+
+    pending_questions = [
+        q for q in questions_list if q.get("target") == current_user
+    ]
+
+    if not pending_questions:
+        st.info(f"No pending questions assigned by {opponent} at the moment.")
+    else:
+        st.write(f"Total Available Questions: {len(pending_questions)}")
+
+        if "quiz_attempts" not in st.session_state:
+            st.session_state.quiz_attempts = {}
+
+        # Reverse list for recent-first display while keeping original absolute numbering
+        for idx, q in enumerate(pending_questions[::-1]):
+            q_id = q["id"]
+            q_num = questions_list.index(q) + 1  # Permanent absolute numbering from database ID index
+            st.markdown(f"### Q{q_num}: {q['question']}")
+
+            attempt_key = f"attempted_{q_id}"
+
+            if attempt_key in st.session_state.quiz_attempts:
+                res = st.session_state.quiz_attempts[attempt_key]
+                st.write(f"**Your Choice:** {res['selected_text']}")
+
+                if res["is_skipped"]:
+                    st.info(
+                        f"ℹ️ You marked this question as **Not Attempted**. Correct"
+                        f" Answer: **{res['correct_text']}**"
+                    )
+                elif res["is_correct"]:
+                    st.success("✅ Correct Answer! Excellent work.")
+                else:
+                    st.error(
+                        f"❌ Incorrect Answer. Correct Answer was:"
+                        f" **{res['correct_text']}**"
+                    )
+
+                if q.get("explanation"):
+                    st.info(f"💡 **Explanation:** {q['explanation']}")
+                else:
+                    st.caption("*(No explanation provided by the creator)*")
+
+                if st.button("🔄 Retry Question", key=f"retry_{q_id}"):
+                    del st.session_state.quiz_attempts[attempt_key]
+                    st.rerun()
+
+            else:
+                with st.form(key=f"q_form_{q_id}"):
+                    opts_list = [
+                        f"(a) {q['opt_a']}",
+                        f"(b) {q['opt_b']}",
+                        f"(c) {q['opt_c']}",
+                        f"(d) {q['opt_d']}",
+                        "(e) Question not attempted",
+                    ]
+
+                    selected_choice = st.radio(
+                        f"Select your response for Q{q_num}",
+                        opts_list,
+                        index=None,
+                        key=f"ans_radio_{q_id}",
+                    )
+
+                    ans_submitted = st.form_submit_button("Check Answer")
+
+                    if ans_submitted:
+                        if selected_choice is None:
+                            st.warning(
+                                "Please select an option or choose 'Question not attempted'."
+                            )
+                        else:
+                            selected_key = f"Option ({selected_choice[1]})"
+                            correct_key = q["answer"]
+
+                            opt_map = {
+                                "Option (a)": q["opt_a"],
+                                "Option (b)": q["opt_b"],
+                                "Option (c)": q["opt_c"],
+                                "Option (d)": q["opt_d"],
+                            }
+                            correct_text = opt_map.get(correct_key, "")
+
+                            is_skipped = selected_key == "Option (e)"
+                            is_correct = selected_key == correct_key
+
+                            st.session_state.quiz_attempts[attempt_key] = {
+                                "selected_text": selected_choice,
+                                "is_skipped": is_skipped,
+                                "is_correct": is_correct,
+                                "correct_text": correct_text,
+                            }
+                            st.rerun()
+
+            st.divider()
+
+# --- TAB 3: PERFORMANCE SCOREBOARD & ANALYTICS ---
 with tab3:
-    st.header("📊 Performance Analytics & Scoreboard")
-    st.markdown("Track comprehensive evaluation metrics, accuracy rates, and net scores with negative marking penalties.")
-    
-    attempts_resp = supabase.table("quiz_attempts").select("*").execute()
-    all_attempts = attempts_resp.data
-    
-    questions_resp = supabase.table("quiz_questions").select("*").execute()
-    all_questions = {q["id"]: q for q in questions_resp.data}
-    
-    if not all_attempts:
-        st.info("No assessment records found yet. Complete a quiz to populate the analytics dashboard.")
-    else:
-        user_attempts = [
-            att for att in all_attempts 
-            if att["question_id"] in all_questions and all_questions[att["question_id"]]["target"] == st.session_state.user
-        ]
-        
-        if not user_attempts:
-            st.info(f"No evaluation records found for {st.session_state.user}.")
-        else:
-            total_attempted = len(user_attempts)
-            correct_answers = sum(1 for att in user_attempts if att["is_correct"])
-            incorrect_answers = total_attempted - correct_answers
-            
-            raw_score = correct_answers * 1.0
-            negative_deduction = round(incorrect_answers * 0.33, 2)
-            net_score = round(raw_score - negative_deduction, 2)
-            accuracy_rate = round((correct_answers / total_attempted) * 100, 2) if total_attempted > 0 else 0.0
-            
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Total Attempted", total_attempted)
-            col2.metric("Correct Answers", correct_answers)
-            col3.metric("Incorrect Answers", incorrect_answers)
-            col4.metric("Accuracy Rate", f"{accuracy_rate}%")
-            
-            st.markdown("---")
-            
-            col_score1, col_score2 = st.columns(2)
-            col_score1.metric("Score Without Negative Marking", f"{raw_score} / {total_attempted}")
-            col_score2.metric("Score With Negative Marking (-0.33)", f"{net_score} / {total_attempted}")
-            
-            st.markdown("### Detailed Attempt Logs")
-            for att in user_attempts:
-                q_info = all_questions.get(att["question_id"])
-                if q_info:
-                    status_icon = "✅" if att["is_correct"] else "❌"
-                    with st.expander(f"{status_icon} {q_info['question'][:60]}..."):
-                        st.write(f"**Question:** {q_info['question']}")
-                        st.write(f"**Your Answer:** {att['selected_answer']}")
-                        st.write(f"**Correct Answer:** {q_info['answer']}")
-                        st.info(f"**Explanation:** {q_info['explanation']}")
+    st.header(f"📊 Performance Scoreboard ({current_user})")
+    st.markdown("Track evaluation metrics, correct/incorrect attempts, and net scores with 1/3 negative marking (-0.33).")
 
-# ==========================================
-# TAB 4: MANAGE QUESTIONS
-# ==========================================
-with tab4:
-    st.header("⚙️ Manage Questions Repository")
-    st.markdown("Review or purge questions you have previously authored.")
-    
-    my_questions_resp = supabase.table("quiz_questions").select("*").eq("creator", st.session_state.user).execute()
-    my_questions = my_questions_resp.data
-    
-    if not my_questions:
-        st.info("You have not authored any questions yet.")
+    if "quiz_attempts" not in st.session_state or not st.session_state.quiz_attempts:
+        st.info("No attempts recorded yet. Attempt questions in the 'Attempt Quiz' tab to generate your scoreboard metrics.")
     else:
-        for q in my_questions:
-            with st.expander(f"Q: {q['question'][:50]}... (Target: {q['target']})"):
-                st.write(f"**Full Question:** {q['question']}")
-                st.write(f"**Correct Answer:** {q['answer']}")
-                if st.button(f"Delete Question ID {q['id']}", key=f"del_{q['id']}"):
-                    supabase.table("quiz_questions").delete().eq("id", q["id"]).execute()
-                    st.success("Question deleted successfully! Refresh the page to view updates.")
+        # Filter current user's attempts from session state
+        user_attempts = [res for key, res in st.session_state.quiz_attempts.items() if not res["is_skipped"]]
+        skipped_count = sum(1 for key, res in st.session_state.quiz_attempts.items() if res["is_skipped"])
+        
+        total_attempted = len(user_attempts)
+        correct_count = sum(1 for res in user_attempts if res["is_correct"])
+        incorrect_count = sum(1 for res in user_attempts if not res["is_correct"])
+
+        raw_score = correct_count * 1.0
+        negative_penalty = round(incorrect_count * 0.33, 2)
+        net_score = round(raw_score - negative_penalty, 2)
+        accuracy_rate = round((correct_count / total_attempted) * 100, 2) if total_attempted > 0 else 0.0
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Attempted Questions", total_attempted)
+        col2.metric("Correct Answers", correct_count)
+        col3.metric("Incorrect Answers", incorrect_count)
+        col4.metric("Accuracy Rate", f"{accuracy_rate}%")
+
+        st.markdown("---")
+
+        col_score1, col_score2 = st.columns(2)
+        col_score1.metric("Score Without Negative Marking", f"{raw_score} / {len(st.session_state.quiz_attempts)}")
+        col_score2.metric("Net Score (With 1/3 Negative Marking)", f"{net_score} / {len(st.session_state.quiz_attempts)}")
+        
+        if skipped_count > 0:
+            st.caption(f"Note: You have marked {skipped_count} question(s) as 'Not attempted'.")
+
+# --- TAB 4: VIEW & MANAGE QUESTIONS ---
+with tab4:
+    st.header("📊 Database History & Management")
+    st.write(
+        "Review all previously added questions from Supabase Cloud (Most recent"
+        " first):"
+    )
+
+    if not questions_list:
+        st.write("Database is currently empty.")
+    else:
+        for idx, q in enumerate(questions_list[::-1]):
+            q_id = q["id"]
+            q_num = len(questions_list) - idx
+            opt_map = {
+                "Option (a)": q["opt_a"],
+                "Option (b)": q["opt_b"],
+                "Option (c)": q["opt_c"],
+                "Option (d)": q["opt_d"],
+            }
+            correct_ans_text = opt_map.get(q["answer"], "")
+
+            col1, col2 = st.columns([4, 1])
+
+            with col1:
+                st.markdown(
+                    f"**Q{q_num}. [Created by: {q['creator']} -> Assigned to:"
+                    f" {q['target']}]** {q['question']}"
+                )
+                st.write(f" - Correct Answer: {q['answer']} ({correct_ans_text})")
+                if q.get("explanation"):
+                    st.write(f" - Explanation: {q['explanation']}")
+
+            with col2:
+                if st.button("🗑️ Delete", key=f"del_btn_{q_id}"):
+                    if delete_question_from_db(q_id):
+                        if f"attempted_{q_id}" in st.session_state.get(
+                            "quiz_attempts", {}
+                        ):
+                            del st.session_state.quiz_attempts[f"attempted_{q_id}"]
+                        st.success("Question deleted from Cloud!")
+                        st.rerun()
+
+            st.markdown("---")
