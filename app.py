@@ -59,6 +59,15 @@ def save_question_to_db(question_data):
         return False
 
 
+def update_question_in_db(q_id, question_data):
+    try:
+        supabase.table("quiz_questions").update(question_data).eq("id", q_id).execute()
+        return True
+    except Exception as e:
+        st.error(f"Error updating question: {e}")
+        return False
+
+
 def delete_question_from_db(q_id):
     try:
         supabase.table("quiz_questions").delete().eq("id", q_id).execute()
@@ -92,7 +101,7 @@ opponent = "Kaifi" if current_user == "Osama" else "Osama"
 questions_list = load_questions()
 user_attempts = load_user_attempts(current_user)
 
-# Navigation Tabs (Added Scoreboard Tab)
+# Navigation Tabs
 tab1, tab2, tab3, tab4 = st.tabs(
     ["📝 Add Questions", "🎯 Attempt Quiz", "📊 Scoreboard & Analytics", "⚙️ Manage Questions"]
 )
@@ -153,12 +162,13 @@ with tab2:
     if not pending_questions:
         st.info(f"No pending questions assigned by {opponent} at the moment.")
     else:
-        st.write(f"Total Available Questions: {len(pending_questions)}")
+        total_p = len(pending_questions)
+        st.write(f"Total Available Questions: {total_p}")
 
-        # Reverse list for recent-first display while keeping original absolute numbering
+        # Independent user-wise numbering and descending order (latest first)
         for idx, q in enumerate(pending_questions[::-1]):
             q_id = q["id"]
-            q_num = questions_list.index(q) + 1  # Permanent absolute numbering from database ID index
+            q_num = total_p - idx  
             st.markdown(f"### Q{q_num}: {q['question']}")
 
             if q_id in user_attempts:
@@ -257,10 +267,6 @@ with tab3:
     if not user_attempts:
         st.info("No attempts recorded on cloud yet. Attempt questions in the 'Attempt Quiz' tab to populate your scoreboard.")
     else:
-        # Fixed condition to properly catch 'Question not attempted' string stored in database
-        valid_attempts = [att for att in user_attempts.values() if "Question not attempted" not in att["selected_answer"]]
-        skipped_count = sum(1 for att in user_attempts.values() if "Question not attempted" in att["selected_answer"])
-        
         total_attempted = len(user_attempts)
         correct_count = sum(
             1 for att in user_attempts.values() if att["is_correct"]
@@ -300,6 +306,9 @@ with tab4:
         " first):"
     )
 
+    if "editing_q_id" not in st.session_state:
+        st.session_state.editing_q_id = None
+
     if not questions_list:
         st.write("Database is currently empty.")
     else:
@@ -314,7 +323,7 @@ with tab4:
             }
             correct_ans_text = opt_map.get(q["answer"], "")
 
-            col1, col2 = st.columns([4, 1])
+            col1, col2, col3 = st.columns([4, 1, 1])
 
             with col1:
                 st.markdown(
@@ -326,9 +335,57 @@ with tab4:
                     st.write(f" - Explanation: {q['explanation']}")
 
             with col2:
+                if st.button("✏️ Edit", key=f"edit_btn_{q_id}"):
+                    st.session_state.editing_q_id = q_id
+                    st.rerun()
+
+            with col3:
                 if st.button("🗑️ Delete", key=f"del_btn_{q_id}"):
                     if delete_question_from_db(q_id):
+                        if st.session_state.editing_q_id == q_id:
+                            st.session_state.editing_q_id = None
                         st.success("Question deleted from Cloud!")
+                        st.rerun()
+
+            # Inline Edit Form when Edit is clicked
+            if st.session_state.get("editing_q_id") == q_id:
+                with st.form(key=f"edit_form_{q_id}"):
+                    st.markdown(f"**Editing Question ID: {q_id}**")
+                    new_q_text = st.text_area("Edit Question Statement:", value=q["question"], key=f"eq_text_{q_id}")
+                    new_opt_a = st.text_input("Edit Option (a)", value=q["opt_a"], key=f"e_opt_a_{q_id}")
+                    new_opt_b = st.text_input("Edit Option (b)", value=q["opt_b"], key=f"e_opt_b_{q_id}")
+                    new_opt_c = st.text_input("Edit Option (c)", value=q["opt_c"], key=f"e_opt_c_{q_id}")
+                    new_opt_d = st.text_input("Edit Option (d)", value=q["opt_d"], key=f"e_opt_d_{q_id}")
+
+                    opts_opts = ["Option (a)", "Option (b)", "Option (c)", "Option (d)"]
+                    default_ans_idx = opts_opts.index(q["answer"]) if q["answer"] in opts_opts else 0
+                    new_correct_opt = st.selectbox("Edit Correct Answer Option", opts_opts, index=default_ans_idx, key=f"e_ans_{q_id}")
+
+                    new_explanation = st.text_area("Edit Explanation:", value=q.get("explanation", ""), key=f"e_exp_{q_id}")
+
+                    c_save, c_cancel = st.columns(2)
+                    with c_save:
+                        save_changes = st.form_submit_button("💾 Save Changes")
+                    with c_cancel:
+                        cancel_edit = st.form_submit_button("❌ Cancel")
+
+                    if save_changes:
+                        updated_data = {
+                            "question": new_q_text,
+                            "opt_a": new_opt_a,
+                            "opt_b": new_opt_b,
+                            "opt_c": new_opt_c,
+                            "opt_d": new_opt_d,
+                            "answer": new_correct_opt,
+                            "explanation": new_explanation.strip()
+                        }
+                        if update_question_in_db(q_id, updated_data):
+                            st.session_state.editing_q_id = None
+                            st.success("Question updated successfully on Cloud!")
+                            st.rerun()
+
+                    if cancel_edit:
+                        st.session_state.editing_q_id = None
                         st.rerun()
 
             st.markdown("---")
