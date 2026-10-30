@@ -169,8 +169,10 @@ with tab2:
         for idx, q in enumerate(pending_questions[::-1]):
             q_id = q["id"]
             q_num = total_p - idx  
-            formatted_q_text = q["question"].replace("\n", "<br>")
-            st.markdown(f"### Q{q_num}: {formatted_q_text}", unsafe_allow_html=True)
+            
+            # Rendering heading bold and question text as standard markdown for code blocks support
+            st.markdown(f"### Q{q_num}:")
+            st.markdown(q["question"])
 
             if q_id in user_attempts:
                 att = user_attempts[q_id]
@@ -303,8 +305,7 @@ with tab3:
 with tab4:
     st.header("📊 Database History & Management")
     st.write(
-        "Review all previously added questions from Supabase Cloud (Most recent"
-        " first):"
+        "Review all previously added questions from Supabase Cloud (Most recent first):"
     )
 
     if "editing_q_id" not in st.session_state:
@@ -327,12 +328,10 @@ with tab4:
             col1, col2, col3 = st.columns([4, 1, 1])
 
             with col1:
-                formatted_q_text = q["question"].replace("\n", "<br>")
-                st.markdown(
-                    f"<b>Q{q_num}. [Created by: {q['creator']} -> Assigned to:"
-                    f" {q['target']}] {formatted_q_text}</b>",
-                    unsafe_allow_html=True,
-                )
+                # Rendering metadata/numbering bold and question text as standard markdown for code blocks support
+                st.markdown(f"**Q{q_num}. [Created by: {q['creator']} -> Assigned to: {q['target']}]**")
+                st.markdown(q["question"])
+                
                 st.write(f" - Correct Answer: {q['answer']} ({correct_ans_text})")
                 if q.get("explanation"):
                     st.write(f" - Explanation: {q['explanation']}")
